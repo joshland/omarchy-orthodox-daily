@@ -258,6 +258,26 @@ function storyText(story) {
     .replace(/^\s+|\s+$/g, ""))
 }
 
+function scriptureClipboardText(readings, dateLabel) {
+  var header = "Scripture Readings — " + String(dateLabel || "")
+  var body = array(readings).map(function(reading) {
+    var title = String(reading.display || "Scripture")
+    var passage = passageText(reading)
+    return passage ? title + "\n\n" + passage : title
+  }).join("\n\n")
+  return body ? header + "\n\n" + body : header
+}
+
+function storiesClipboardText(stories, dateLabel) {
+  var header = "Saints & Commemorations — " + String(dateLabel || "")
+  var body = array(stories).map(function(story) {
+    var title = String(story.title || "Life of a saint")
+    var text = storyText(story)
+    return text ? title + "\n\n" + text : title
+  }).join("\n\n")
+  return body ? header + "\n\n" + body : header
+}
+
 function prayerForDay(history, key) {
   var value = history && history[key] ? history[key] : null
   return {
@@ -356,6 +376,8 @@ if (typeof module !== "undefined") {
     isGospelReading: isGospelReading,
     gospelsFirst: gospelsFirst,
     storyText: storyText,
+    scriptureClipboardText: scriptureClipboardText,
+    storiesClipboardText: storiesClipboardText,
     prayerForDay: prayerForDay,
     parsePrayerHistory: parsePrayerHistory,
     prayerWeek: prayerWeek,

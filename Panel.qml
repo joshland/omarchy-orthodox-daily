@@ -53,6 +53,9 @@ Panel {
   readonly property var feasts: report ? Model.array(report.feasts) : []
   readonly property var saints: report ? Model.array(report.saints) : []
   readonly property bool fetching: fetchProc.running
+  readonly property string todayDisplayDate: Qt.formatDate(root.today, "MMMM d, yyyy")
+  readonly property string scriptureClipboardText: Model.scriptureClipboardText(root.readings, root.todayDisplayDate)
+  readonly property string saintsClipboardText: Model.storiesClipboardText(root.stories, root.todayDisplayDate)
 
   function open() {
     root.controller.show()
@@ -98,6 +101,12 @@ Panel {
 
   function openUrl(url) {
     if (url) Qt.openUrlExternally(url)
+  }
+
+  function copyToClipboard(text) {
+    if (!text || clipboardProc.running) return
+    clipboardProc.command = ["wl-copy", "--", text]
+    clipboardProc.running = true
   }
 
   function openOcaDay() {
@@ -246,6 +255,10 @@ Panel {
     onExited: function(exitCode) {
       settingsFile.reload()
     }
+  }
+
+  Process {
+    id: clipboardProc
   }
 
   FileView {
@@ -879,8 +892,19 @@ Panel {
 
             Item {
               width: Math.max(0, parent.width - parent.children[0].implicitWidth
-                - ocaReadings.implicitWidth - orthocalReadings.implicitWidth - parent.spacing * 3)
+                - copyReadings.implicitWidth - ocaReadings.implicitWidth - orthocalReadings.implicitWidth
+                - parent.spacing * 4)
               height: 1
+            }
+
+            PanelActionButton {
+              id: copyReadings
+              iconText: ""
+              tooltipText: "Copy scripture readings"
+              foreground: root.sourceLinkForeground
+              fontFamily: root.contentFontFamily
+              fontSize: Style.font.title
+              onClicked: root.copyToClipboard(root.scriptureClipboardText)
             }
 
             PanelActionButton {
@@ -950,8 +974,19 @@ Panel {
 
             Item {
               width: Math.max(0, parent.width - parent.children[0].implicitWidth
-                - ocaSaints.implicitWidth - orthocalSaints.implicitWidth - parent.spacing * 3)
+                - copySaints.implicitWidth - ocaSaints.implicitWidth - orthocalSaints.implicitWidth
+                - parent.spacing * 4)
               height: 1
+            }
+
+            PanelActionButton {
+              id: copySaints
+              iconText: ""
+              tooltipText: "Copy saints and commemorations"
+              foreground: root.sourceLinkForeground
+              fontFamily: root.contentFontFamily
+              fontSize: Style.font.title
+              onClicked: root.copyToClipboard(root.saintsClipboardText)
             }
 
             PanelActionButton {
