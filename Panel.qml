@@ -24,6 +24,7 @@ Panel {
   readonly property string stateDir: Quickshell.env("HOME") + "/.local/state/omarchy/plugins/io.github.tyrichards.orthodox-daily/"
   readonly property string cachePath: stateDir + "daily.json"
   readonly property string checklistPath: stateDir + "checklist.json"
+  readonly property string settingsPath: stateDir + "settings.json"
   readonly property string saintImageCacheDir: stateDir + "saint-images/"
   readonly property string saintImageScript: Quickshell.env("HOME")
     + "/.config/omarchy/plugins/io.github.tyrichards.orthodox-daily/OcaSaintImages.py"
@@ -31,6 +32,9 @@ Panel {
   property var report: null
   property bool cacheLoaded: false
   property bool checklistLoaded: false
+  property bool settingsLoaded: false
+  property string tradition: "slavic"
+  property string calendar: "gregorian"
   property var prayerHistory: ({})
   property var storyImages: []
   property string storyImageRequestKey: ""
@@ -82,12 +86,13 @@ Panel {
   function refresh(useCache) {
     if (fetchProc.running) return
 
-    var cacheIsFresh = report && Model.reportMatchesDate(report, today)
+    var cacheIsFresh = report && Model.reportMatchesDate(report, today, calendar)
+      && Model.reportMatchesSettings(report, tradition, calendar)
       && lastFetchMs > 0 && (Date.now() - lastFetchMs) < 15 * 60 * 1000
     if (useCache === false && cacheIsFresh) return
 
     errorMessage = ""
-    fetchProc.command = ["curl", "-fsS", "--max-time", "12", Model.apiUrl(today)]
+    fetchProc.command = ["curl", "-fsS", "--max-time", "12", Model.apiUrl(today, tradition, calendar)]
     fetchProc.running = true
   }
 
@@ -178,6 +183,40 @@ Panel {
     togglePrayerForDay(todayKey, "evening")
   }
 
+  function saveSettings() {
+    settingsFile.setText(JSON.stringify({
+      tradition: tradition,
+      calendar: calendar
+    }, null, 2) + "\n")
+  }
+
+  function applySettings(raw) {
+    var parsed = Model.parseSettings(raw)
+    tradition = parsed.tradition
+    calendar = parsed.calendar
+    settingsLoaded = true
+  }
+
+  function setTradition(value) {
+    var next = Model.normalizeTradition(value)
+    if (next === tradition) return
+    tradition = next
+    saveSettings()
+    report = null
+    lastFetchMs = 0
+    refresh(true)
+  }
+
+  function setCalendar(value) {
+    var next = Model.normalizeCalendar(value)
+    if (next === calendar) return
+    calendar = next
+    saveSettings()
+    report = null
+    lastFetchMs = 0
+    refresh(true)
+  }
+
   function loadChecklist(raw) {
     prayerHistory = Model.parsePrayerHistory(raw, todayKey)
     var todayPrayers = Model.prayerForDay(prayerHistory, todayKey)
@@ -205,6 +244,24 @@ Panel {
     id: ensureDirsProc
     command: ["mkdir", "-p", root.stateDir]
     onExited: function(exitCode) {
+      settingsFile.reload()
+    }
+  }
+
+  FileView {
+    id: settingsFile
+    path: root.settingsPath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      root.applySettings(text())
+      cacheFile.reload()
+      checklistFile.reload()
+      root.refresh(true)
+    }
+    onLoadFailed: {
+      root.applySettings("")
       cacheFile.reload()
       checklistFile.reload()
       root.refresh(true)
@@ -219,7 +276,8 @@ Panel {
     printErrors: false
     onLoaded: {
       var parsed = Model.parseReport(text())
-      if (!root.report && Model.reportMatchesDate(parsed, root.today)) root.report = parsed
+      if (!root.report && Model.reportMatchesDate(parsed, root.today, root.calendar)
+        && Model.reportMatchesSettings(parsed, root.tradition, root.calendar)) root.report = parsed
       root.cacheLoaded = true
     }
     onLoadFailed: root.cacheLoaded = true
@@ -263,15 +321,16 @@ Panel {
       onStreamFinished: {
         var raw = String(text || "").trim()
         var parsed = Model.parseReport(raw)
-        if (!Model.reportMatchesDate(parsed, root.today)) {
+        if (!Model.reportMatchesDate(parsed, root.today, root.calendar)) {
           if (!root.report) root.errorMessage = "Could not load today’s calendar."
           return
         }
 
-        root.report = parsed
+        var tagged = Model.tagReport(parsed, root.tradition, root.calendar)
+        root.report = tagged
         root.lastFetchMs = Date.now()
         root.errorMessage = ""
-        cacheFile.setText(raw + "\n")
+        cacheFile.setText(JSON.stringify(tagged) + "\n")
       }
     }
 
@@ -709,6 +768,48 @@ Panel {
 
           Column {
             width: parent.width
+            spacing: Style.space(4)
+
+            PanelSectionHeader {
+              text: "CALENDAR"
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(15)
+
+              ToggleGroup {
+                width: (parent.width - parent.spacing) / 2
+                label: "TRADITION"
+                options: [
+                  { value: "slavic", label: "Slavic" },
+                  { value: "greek", label: "Greek" }
+                ]
+                value: root.tradition
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onSelected: function(value) { root.setTradition(value) }
+              }
+
+              ToggleGroup {
+                width: (parent.width - parent.spacing) / 2
+                label: "RECKONING"
+                options: [
+                  { value: "julian", label: "Julian" },
+                  { value: "gregorian", label: "Gregorian" }
+                ]
+                value: root.calendar
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onSelected: function(value) { root.setCalendar(value) }
+              }
+            }
+          }
+
+          Column {
+            width: parent.width
             // Mirror the Scripture section with 4px from title to first row.
             spacing: Style.space(4)
 
@@ -799,7 +900,7 @@ Panel {
               foreground: root.sourceLinkForeground
               fontFamily: root.contentFontFamily
               fontSize: Style.font.title
-              onClicked: root.openUrl(Model.orthocalUrl(root.today))
+              onClicked: root.openUrl(Model.orthocalUrl(root.today, root.tradition, root.calendar))
             }
           }
 
@@ -870,7 +971,7 @@ Panel {
               foreground: root.sourceLinkForeground
               fontFamily: root.contentFontFamily
               fontSize: Style.font.title
-              onClicked: root.openUrl(Model.orthocalUrl(root.today))
+              onClicked: root.openUrl(Model.orthocalUrl(root.today, root.tradition, root.calendar))
             }
           }
 
